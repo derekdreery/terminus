@@ -1,0 +1,12 @@
+[package]
+name = "terminus"
+version = "0.1.0"
+authors = ["Richard Dodd <richard.o.dodd@gmail.com>"]
+
+[dependencies]
+error-chain = "*"
+term = { path = "../term" }
+
+[target.'cfg(windows)'.dependencies]
+kernel32-sys = "*"
+winapi = "*"
