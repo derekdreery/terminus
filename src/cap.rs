@@ -64,7 +64,7 @@ pub enum Capability {
     Blink,
     /// Text can be standout
     Standout,
-    /// Text will be printed in reverse
+    /// Text can be printed in reverse
     Reverse,
     /// Can accept secure text (not displayed on screen - for passwords)
     Secure,
