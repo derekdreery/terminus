@@ -2,7 +2,7 @@
 
 use cap::Capability;
 use error::{ErrorKind, Result};
-use Dimensions;
+use {Position, Dimensions};
 
 #[cfg(windows)]
 mod win;
@@ -83,31 +83,89 @@ impl<T: io::Write + Send> Terminal<T> {
     }
 
     /// Check for support for an attribute
-    pub fn has_capability(&self, cap: Capability) -> bool {
+    pub fn has_capability(&self, cap: &Capability) -> bool {
         match self {
-            &Terminal::WinConsole(ref console) => console.has_capability(cap)
+            &Terminal::WinConsole(ref console) => console.has_capability(*cap)
         }
     }
 
+    /// Reset the terminal to default values
     pub fn reset(&mut self) -> Result<()> {
         match self {
             &mut Terminal::WinConsole(ref mut console) => console.reset(),
         }
     }
 
+    /// True if bold is set, false if not
+    pub fn bold(&self) -> Result<bool> {
+        match self {
+            &Terminal::WinConsole(_) => {
+                bail!(ErrorKind::NotSupported(Capability::Bold));
+            }
+        }
+    }
+
     /// Moves the cursor up one line
     pub fn cursor_up(&mut self) -> Result<()> {
-        unimplemented!();
+        match self {
+            &mut Terminal::WinConsole(ref mut console) => console.cursor_up(),
+        }
     }
 
     /// Deletes the text from the cursor location to the end of the line
     pub fn delete_line(&mut self) -> Result<()> {
-        unimplemented!();
+        match self {
+            &mut Terminal::WinConsole(ref mut console) => console.delete_line(),
+        }
+    }
+
+    /// Return to the beginning of the current line
+    pub fn carriage_return(&mut self) -> Result<()> {
+        match self {
+            &mut Terminal::WinConsole(ref mut console) => console.carriage_return(),
+        }
+    }
+
+    /// Gets the current position of the cursor
+    pub fn position(&self) -> Result<Position> {
+        match self {
+            &Terminal::WinConsole(ref console) => console.position(),
+        }
+    }
+
+    /// Sets the position of the cursor
+    pub fn set_position(&mut self, pos: Position) -> Result<()> {
+        match self {
+            &mut Terminal::WinConsole(ref mut console) => console.set_position(pos),
+        }
     }
 
     /// Gets the dimensions of the terminal
     pub fn dimensions(&self) -> Result<Dimensions> {
-        unimplemented!();
+        match self {
+            &Terminal::WinConsole(ref console) => console.dimensions(),
+        }
+    }
+
+    /// Get immutable reference to underlying stream
+    pub fn get_ref(&self) -> &T {
+        match self {
+            &Terminal::WinConsole(ref console) => console.get_ref(),
+        }
+    }
+
+    /// Get mutable reference to underlying stream
+    pub fn get_mut(&mut self) -> &mut T {
+        match self {
+            &mut Terminal::WinConsole(ref mut console) => console.get_mut(),
+        }
+    }
+
+    /// Get mutable reference to underlying stream
+    pub fn into_inner(self) -> T {
+        match self {
+            Terminal::WinConsole(console) => console.into_inner(),
+        }
     }
 }
 

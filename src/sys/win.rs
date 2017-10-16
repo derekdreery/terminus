@@ -18,12 +18,13 @@ extern crate winapi;
 use cap::Capability;
 use std::io::prelude::*;
 use std::io;
+use std::os::raw::{c_short};
 use std::ptr;
 
 use super::Attr;
 use {Error, ErrorKind, Result};
 use cap::Color;
-use Dimensions;
+use {Position, Dimensions};
 
 /// A Terminal implementation which uses the Win32 Console API.
 pub struct WinConsole<T> {
@@ -38,6 +39,7 @@ pub struct WinConsole<T> {
     background: Color,
 }
 
+/// Convert the color enum to a windows color bitmask
 fn color_to_bits(color: Color) -> u16 {
     // magic numbers from mingw-w64's wincon.h
     // #define FOREGROUND_BLUE 0x1
@@ -68,6 +70,7 @@ fn color_to_bits(color: Color) -> u16 {
     }
 }
 
+/// Convert a windows color bitmask to the color enum
 fn bits_to_color(bits: u16) -> Color {
     match bits {
         0 | 0x8 => Color::Black,
@@ -85,7 +88,7 @@ fn bits_to_color(bits: u16) -> Color {
         0xD => Color::Magenta,
         0xB => Color::Cyan,
         0xF => Color::White,
-        _ => unreachable!(),
+        o => panic!("I don't recognise a color of {:x}", o),
     }
 }
 
@@ -136,7 +139,7 @@ impl<T: Write + Send> WinConsole<T> {
         unsafe {
             let mut buffer_info = ::std::mem::uninitialized();
             if kernel32::GetConsoleScreenBufferInfo(handle, &mut buffer_info) != 0 {
-                fg = bits_to_color(buffer_info.wAttributes);
+                fg = bits_to_color(buffer_info.wAttributes & 0xf);
                 bg = bits_to_color(buffer_info.wAttributes >> 4);
             } else {
                 return Err(io::Error::last_os_error());
@@ -164,18 +167,7 @@ impl<T: Write> Write for WinConsole<T> {
 
 impl<T: Write + Send> WinConsole<T> {
 
-    pub fn attr(&self, attr: Attr) -> Result<bool> {
-        match attr {
-            Attr::ForegroundColor(f) => {
-                Ok(self.foreground == f)
-            }
-            Attr::BackgroundColor(b) => {
-                Ok(self.background == b)
-            }
-            _ => bail!(ErrorKind::NotSupported(attr.into())),
-        }
-    }
-
+    /// Set an attribute (only ForegroundColor and BackgroundColor are supported)
     pub fn set_attr(&mut self, attr: Attr) -> Result<()> {
         match attr {
             Attr::ForegroundColor(f) => {
@@ -197,19 +189,23 @@ impl<T: Write + Send> WinConsole<T> {
     // it to do anything -cmr
     pub fn has_capability(&self, cap: Capability) -> bool {
         match cap {
-            Capability::ForegroundColor | Capability::BackgroundColor => true,
+            Capability::ForegroundColor | Capability::BackgroundColor 
+            | Capability::Position | Capability::Dimensions => true,
             _ => false
         }
     }
 
+    /// Get the foreground color
     pub fn foreground_color(&self) -> Color {
         self.foreground
     }
 
+    /// Get the background color
     pub fn background_color(&self) -> Color {
         self.background
     }
 
+    /// Reset the terminal to its original values
     pub fn reset(&mut self) -> Result<()> {
         self.foreground = self.def_foreground;
         self.background = self.def_background;
@@ -218,6 +214,7 @@ impl<T: Write + Send> WinConsole<T> {
         Ok(())
     }
 
+    /// Move the cursor up 1 line
     pub fn cursor_up(&mut self) -> Result<()> {
         let _unused = self.buf.flush();
         let handle = try!(conout());
@@ -249,6 +246,8 @@ impl<T: Write + Send> WinConsole<T> {
         }
     }
 
+    /// Delete all text on the current line (set the text to " " with current background and 
+    /// foreground colors)
     pub fn delete_line(&mut self) -> Result<()> {
         let _unused = self.buf.flush();
         let handle = try!(conout());
@@ -261,12 +260,15 @@ impl<T: Write + Send> WinConsole<T> {
             let size = buffer_info.dwSize;
             let num = (size.X - pos.X) as winapi::DWORD;
             let mut written = 0;
-            if kernel32::FillConsoleOutputCharacterW(handle, 0, num, pos, &mut written) == 0 {
+            // 0x0020 = " " in utf-16
+            if kernel32::FillConsoleOutputCharacterW(handle, 0x0020, num, pos, &mut written) == 0 {
                 return Err(io::Error::last_os_error().into());
             }
+            debug_assert_eq!(written, num);
             if kernel32::FillConsoleOutputAttribute(handle, 0, num, pos, &mut written) == 0 {
                 return Err(io::Error::last_os_error().into());
             }
+            debug_assert_eq!(written, num);
             // Similar reasoning for not failing as in cursor_up -- it doesn't even make
             // sense to
             // me that these APIs could have written 0, unless the terminal is width zero.
@@ -274,6 +276,7 @@ impl<T: Write + Send> WinConsole<T> {
         }
     }
 
+    /// Return to the beginning of the current line
     pub fn carriage_return(&mut self) -> Result<()> {
         let _unused = self.buf.flush();
         let handle = try!(conout());
@@ -282,7 +285,7 @@ impl<T: Write + Send> WinConsole<T> {
             if kernel32::GetConsoleScreenBufferInfo(handle, &mut buffer_info) != 0 {
                 let winapi::COORD { X: x, Y: y } = buffer_info.dwCursorPosition;
                 if x == 0 {
-                    Ok(()) // I changed this from `term` - should it change back
+                    Ok(()) // I changed this from `term` - should it change back?
                 } else {
                     let pos = winapi::COORD {
                         X: 0,
@@ -300,7 +303,47 @@ impl<T: Write + Send> WinConsole<T> {
         }
     }
 
-    pub fn dims(&self) -> Result<Dimensions> {
+    /// Get the position of the cursor, relative to the current window
+    pub fn position(&self) -> Result<Position> {
+        let handle = try!(conout());
+        unsafe {
+            let mut buffer_info = ::std::mem::uninitialized();
+            if kernel32::GetConsoleScreenBufferInfo(handle, &mut buffer_info) != 0 {
+                Ok(Position {
+                    column: 0.max(buffer_info.dwCursorPosition.X - buffer_info.srWindow.Top) as u16,
+                    row: 0.max(buffer_info.dwCursorPosition.Y - buffer_info.srWindow.Left) as u16,
+                })
+            } else {
+                Err(io::Error::last_os_error().into())
+            }
+        }
+    }
+
+    /// Set the position of the cursor
+    pub fn set_position(&mut self, pos: Position) -> Result<()> {
+        self.flush()?;
+        let handle = try!(conout());
+        unsafe {
+            // We have to account for window position as SetConsoleCursorPosition looks at the whole
+            // terminal (including scrolling up)
+            let mut buffer_info = ::std::mem::uninitialized();
+            if kernel32::GetConsoleScreenBufferInfo(handle, &mut buffer_info) == 0 {
+                return Err(io::Error::last_os_error().into());
+            }
+            let win_pos = winapi::wincon::COORD {
+                X: pos.column as c_short + buffer_info.srWindow.Left,
+                Y: pos.row as c_short + buffer_info.srWindow.Top
+            };
+            if kernel32::SetConsoleCursorPosition(handle, win_pos) != 0 {
+                Ok(())
+            } else {
+                Err(io::Error::last_os_error().into())
+            }
+        }
+    }
+
+    /// Get the dimensions of the terminal
+    pub fn dimensions(&self) -> Result<Dimensions> {
         let handle = try!(conout());
         unsafe {
             let mut buffer_info = ::std::mem::uninitialized();
@@ -315,14 +358,17 @@ impl<T: Write + Send> WinConsole<T> {
         }
     }
 
+    /// Get the inner Writer as an immutable reference
     pub fn get_ref<'a>(&'a self) -> &'a T {
         &self.buf
     }
 
+    /// Get the inner Writer as a mutable reference
     pub fn get_mut<'a>(&'a mut self) -> &'a mut T {
         &mut self.buf
     }
 
+    /// Destroy the WinConsole, returning the contained Writer
     pub fn into_inner(self) -> T
         where Self: Sized
     {

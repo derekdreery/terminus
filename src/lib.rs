@@ -8,13 +8,22 @@ mod sys;
 
 pub use error::*;
 pub use cap::{Capability, Color};
+use cap::CAPABILITIES;
 
 use std::io;
 
 /// A struct representing the dimensions of a terminal
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Dimensions {
     pub rows: u16,
     pub columns: u16
+}
+
+/// A struct representing a position in the terminal window (e.g. cursor)
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct Position {
+    pub row: u16,
+    pub column: u16
 }
 
 /// A terminal providing extra functionality besides writing bytes.
@@ -36,8 +45,7 @@ impl<T: io::Write + Send> Terminal<T> {
     /// Check whether this terminal has a particular capability
     #[inline]
     pub fn has_capability(&self, cap: &Capability) -> bool {
-        // TODO for now
-        true
+        self.inner.has_capability(cap)
     }
 
     /// Check whether this terminal has a set of capabilities
@@ -49,6 +57,7 @@ impl<T: io::Write + Send> Terminal<T> {
     /// // this will fail if the terminal does not support bold or dim
     /// assert!(term.has_capabilities(caps));
     /// ```
+    #[inline]
     pub fn has_capabilities<'a, I, Iter>(&self, caps: I) -> bool 
         where I: IntoIterator<IntoIter=Iter, Item=&'a Capability>,
               Iter: Iterator<Item=&'a Capability>,
@@ -59,6 +68,17 @@ impl<T: io::Write + Send> Terminal<T> {
             }
         }
         true
+    }
+
+    /// Get a list of capabilities supported on the current system
+    /// 
+    /// This is useful during development
+    #[inline]
+    pub fn capabilities(&self) -> Vec<Capability> {
+        CAPABILITIES.iter()
+            .filter(|cap| self.has_capability(cap))
+            .map(|e| e.clone())
+            .collect()
     }
 
     /// Reset the terminal attributes to their defaults (for most options, this is "off")
@@ -92,15 +112,15 @@ impl<T: io::Write + Send> Terminal<T> {
     }
 
     /// Get whether text will be written in bold
-    pub fn bold(&mut self) -> Result<bool> {
     #[inline]
-        bail!(ErrorKind::NotSupported(Capability::Bold))
+    pub fn bold(&mut self) -> Result<bool> {
+        self.inner.bold()
     }
 
     /// Set bold text on or off
     #[inline]
     pub fn set_bold(&mut self, on: bool) -> Result<()> {
-        bail!(ErrorKind::NotSupported(Capability::Bold))
+        self.inner.set_attr(sys::Attr::Bold(on))
     }
 
     /// Get whether text will be written with lower brightness
@@ -112,7 +132,7 @@ impl<T: io::Write + Send> Terminal<T> {
     /// Set writing dim text on or off
     #[inline]
     pub fn set_dim(&mut self, on: bool) -> Result<()> {
-        bail!(ErrorKind::NotSupported(Capability::Dim))
+        self.inner.set_attr(sys::Attr::Dim(on))
     }
 
     /// Get whether text will be written in italics
@@ -124,7 +144,7 @@ impl<T: io::Write + Send> Terminal<T> {
     /// Set italic text on or off
     #[inline]
     pub fn set_italic(&mut self, on: bool) -> Result<()> {
-        unimplemented!();
+        self.inner.set_attr(sys::Attr::Italic(on))
     }
 
     /// Get whether text will be written underlined
@@ -136,7 +156,7 @@ impl<T: io::Write + Send> Terminal<T> {
     /// Set writing underlined text on or off
     #[inline]
     pub fn set_underline(&mut self, on: bool) -> Result<()> {
-        unimplemented!();
+        self.inner.set_attr(sys::Attr::Underline(on))
     }
 
     /// Get whether text will be written underlined
@@ -148,7 +168,7 @@ impl<T: io::Write + Send> Terminal<T> {
     /// Set writing underlined text on or off
     #[inline]
     pub fn set_blink(&mut self, on: bool) -> Result<()> {
-        unimplemented!();
+        self.inner.set_attr(sys::Attr::Blink(on))
     }
 
     /// Get whether text will be written underlined
@@ -160,7 +180,7 @@ impl<T: io::Write + Send> Terminal<T> {
     /// Set writing underlined text on or off
     #[inline]
     pub fn set_standout(&mut self, on: bool) -> Result<()> {
-        unimplemented!();
+        self.inner.set_attr(sys::Attr::Standout(on))
     }
 
     /// Get whether text will be written underlined
@@ -172,7 +192,7 @@ impl<T: io::Write + Send> Terminal<T> {
     /// Set writing underlined text on or off
     #[inline]
     pub fn set_reverse(&mut self, on: bool) -> Result<()> {
-        unimplemented!();
+        self.inner.set_attr(sys::Attr::Reverse(on))
     }
 
     /// Get whether text will be written underlined
@@ -184,43 +204,61 @@ impl<T: io::Write + Send> Terminal<T> {
     /// Set writing underlined text on or off
     #[inline]
     pub fn set_secure(&mut self, on: bool) -> Result<()> {
-        unimplemented!();
+        self.inner.set_attr(sys::Attr::Secure(on))
     }
     
     /// Moves the cursor up one line
     #[inline]
     pub fn cursor_up(&mut self) -> Result<()> {
-        unimplemented!();
+        self.inner.cursor_up()
     }
 
     /// Deletes the text from the cursor location to the end of the line
     #[inline]
     pub fn delete_line(&mut self) -> Result<()> {
-        unimplemented!();
+        self.inner.delete_line()
+    }
+
+    /// Returns the cursor to the beginning of the current line
+    #[inline]
+    pub fn carriage_return(&mut self) -> Result<()> {
+        self.inner.carriage_return()
+    }
+
+    /// Gets the current cursor position from top-left
+    #[inline]
+    pub fn position(&self) -> Result<Position> {
+        self.inner.position()
+    }
+
+    /// Gets the current cursor position from top-left
+    #[inline]
+    pub fn set_position(&mut self, position: Position) -> Result<()> {
+        self.inner.set_position(position)
     }
 
     /// Gets the dimensions of the terminal
     #[inline]
     pub fn dimensions(&self) -> Result<Dimensions> {
-        unimplemented!();
+        self.inner.dimensions()
     }
 
     /// Gets an immutable reference to the wrapped stream
     #[inline]
-    pub fn get_ref(&self) -> () {
-        unimplemented!();
+    pub fn get_ref(&self) -> &T {
+        self.inner.get_ref()
     }
 
     /// Gets a mutable reference to the wrapped stream
     #[inline]
-    pub fn get_mut(&self) -> () {
-        unimplemented!();
+    pub fn get_mut(&mut self) -> &mut T {
+        self.inner.get_mut()
     }
 
     /// Destroy the terminus instance, recovering the wrapped stream
     #[inline]
-    pub fn into_inner(self) -> () {
-        unimplemented!();
+    pub fn into_inner(self) -> T {
+        self.inner.into_inner()
     }
 }
 
@@ -240,8 +278,8 @@ pub fn stdout() -> Result<Terminal<io::Stdout>> {
 }
 
 /// Create a terminal wrapping stderr
-pub fn stderr() {
-
+pub fn stderr() -> Result<Terminal<io::Stderr>> {
+    Terminal::new(io::stderr())
 }
 
 #[cfg(test)]

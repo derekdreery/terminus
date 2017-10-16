@@ -2,6 +2,13 @@
 
 use std::fmt;
 
+/// All available capabilities, can be filtered to get a list of supported capabilities
+pub const CAPABILITIES: &'static [Capability] = 
+    &[Capability::Bold, Capability::Dim, Capability::Italic, Capability::Underline, 
+      Capability::Blink, Capability::Standout, Capability::Reverse, Capability::Secure, 
+      Capability::ForegroundColor, Capability::BackgroundColor, Capability::Reset, 
+      Capability::Position, Capability::Dimensions];
+
 /// The primary colors used in a terminal.
 /// 
 /// They correspond to 1 bit each for read, green, blue, and a bit for bright.
@@ -74,6 +81,8 @@ pub enum Capability {
     BackgroundColor,
     /// Whether the terminal can be reset to defaults
     Reset,
+    /// Whether the terminal can give and set the cursor position
+    Position,
     /// Whether we can find out the screen dimensions
     Dimensions,
 }
@@ -92,6 +101,7 @@ impl fmt::Display for Capability {
             &Capability::ForegroundColor => write!(f, "foreground color"),
             &Capability::BackgroundColor => write!(f, "background color"),
             &Capability::Reset => write!(f, "reset"),
+            &Capability::Position => write!(f, "position"),
             &Capability::Dimensions => write!(f, "dimensions"),
         }
     }
